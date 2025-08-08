@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: retail-solution-accelerator
+description: Agentic Shop
+metadata:
+    template: retail-solution-accelerator@0.0.1
+requiredVersions:
+    azd: ">= 1.15.0"
+
+hooks:
+    preprovision:
+            shell: pwsh         # run on pwsh
+            interactive: true
+            continueOnError: false
+            run: |
+                Write-Host "Running capacity validation..." -ForegroundColor Yellow
+                ./azd-hooks/preprovision-checklist.ps1
+                if ($LASTEXITCODE -ne 0) {
+                    # Validation failed - script already showed error and cleaned up
+                    exit $LASTEXITCODE
+                }
+                Write-Host "Capacity validation completed successfully!" -ForegroundColor Green
+                Write-Host "Running environment setup..." -ForegroundColor Yellow
+                ./azd-hooks/preprovision.ps1
+    postprovision:
+            shell: pwsh         # run on pwsh
+            interactive: true
+            continueOnError: false
+            run: |
+                ./azd-hooks/postprovision.ps1
+
+workflows:
+  up:
+    steps:
+      - azd: provision
+
+infra:
+    bicep: ./infra/main.bicep
+
+services:
+    backend:
+        project: ./backend
+        language: py
+        module: backend
+        host: containerapp
+        docker:
+            remoteBuild: true
+        hooks:
+            predeploy:
+                shell: pwsh
+                interactive: true
+                continueOnError: false
+                run: ../azd-hooks/predeploy.ps1
+    frontend:
+        project: ./frontend
+        language: ts
+        module: frontend
+        host: containerapp
+        docker:
+            context: ./
+            registry: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}
+            path: ./Dockerfile
+            remoteBuild: true
+        hooks:
+            prebuild:
+                shell: pwsh         # run on pwsh
+                interactive: true
+                continueOnError: false
+                run: |
+                    $beAppEndpoint = azd env get-value SERVICE_BACKEND_URI
+                    $envLine = "VITE_BE_APP_ENDPOINT=`"$beAppEndpoint/`""
+                    Out-File -Path ".\.env.local" -InputObject $envLine
+            postdeploy:
+                shell: pwsh         # run on pwsh
+                interactive: true
+                continueOnError: false
+                run: |
+                    if (Test-Path -Path ".\.env.local") {
+                        Remove-Item -Path ".\.env.local" -Force
+                    }
+    arize:
+        project: ./arize-phoenix
+        language: py
+        module: arize
+        host: containerapp
+        docker:
+            remoteBuild: true

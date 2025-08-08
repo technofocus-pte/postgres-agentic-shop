@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+        "label": "start-arize",
+        "type": "shell",
+        "command": "bash",
+        "args": [
+            ".vscode/scripts/start-arize.sh"
+        ],
+        "problemMatcher": []
+    }
+  ]
+}
