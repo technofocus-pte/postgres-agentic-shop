@@ -183,6 +183,7 @@ The deployment might take several minutes. Progress updates will be displayed in
 
 Once the deployment is complete, `azd` will output the **application URLs** for the deployed services.
 
+> **⚠️ IMPORTANT:** Upon first time loading the frontend URL, this will kick off the data load step.  This may take 1-2 minutes where you will see a spinner icon.  You may need to refresh the browser to load the user interface.
 > **Note:** Make sure to **copy the frontend URL** displayed in the output and open it in your browser to access the application.
 
 ### 🧹 Tear Down
