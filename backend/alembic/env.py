@@ -1,7 +1,6 @@
 from logging.config import fileConfig
 
 from alembic import context
-from pgvector.psycopg2 import register_vector
 from sqlalchemy import engine_from_config, pool
 from src.config.config import settings
 from src.models.base import Base
@@ -61,7 +60,6 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
-        register_vector(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

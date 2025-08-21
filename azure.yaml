@@ -43,13 +43,8 @@ services:
         module: backend
         host: containerapp
         docker:
+            registry: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}
             remoteBuild: true
-        hooks:
-            predeploy:
-                shell: pwsh
-                interactive: true
-                continueOnError: false
-                run: ../azd-hooks/predeploy.ps1
     frontend:
         project: ./frontend
         language: ts
@@ -83,4 +78,5 @@ services:
         module: arize
         host: containerapp
         docker:
+            registry: ${AZURE_CONTAINER_REGISTRY_ENDPOINT}
             remoteBuild: true

@@ -5,69 +5,13 @@ targetScope = 'resourceGroup'
 @description('Name which is used for each resource')
 param name string
 
-@minLength(1)
-@description('Primary location for all resources')
-@allowed([
-  'australiacentral'
-  'australiacentral2'
-  'australiaeast'
-  'australiasoutheast'
-  'austriaeast'
-  'brazilsouth'
-  'canadacentral'
-  'canadaeast'
-  'centralindia'
-  'centralus'
-  'chilecentral'
-  'eastasia'
-  'eastus'
-  'eastus2'
-  'francecentral'
-  'germanywestcentral'
-  'indonesiacentral'
-  'israelcentral'
-  'italynorth'
-  'japaneast'
-  'japanwest'
-  'koreacentral'
-  'koreasouth'
-  'malaysiawest'
-  'mexicocentral'
-  'newzealandnorth'
-  'northcentralus'
-  'northeurope'
-  'norwayeast'
-  'polandcentral'
-  'qatarcentral'
-  'southafricanorth'
-  'southcentralus'
-  'southeastasia'
-  'southindia'
-  'spaincentral'
-  'swedencentral'
-  'switzerlandnorth'
-  'uaenorth'
-  'uksouth'
-  'ukwest'
-  'westcentralus'
-  'westeurope'
-  'westindia'
-  'westus'
-  'westus2'
-  'westus3'
-])
-@metadata({
-  azd: {
-    type: 'location'
-  }
-})
-param location string
+
 
 @description('Name of the user to add in PostgreSQL server as administrator')
 param principalName string = ''
 
 @minLength(1)
-@description('Location for the OpenAI resource supporting Global Standard Deployment type')
+@description('Location for the Resources')
 // Look for desired models on the availability table:
 // https://learn.microsoft.com/azure/ai-services/openai/concepts/models#global-standard-model-availability
 @allowed([
@@ -105,7 +49,7 @@ param principalName string = ''
     ]
   }
 })
-param openAILocation string
+param location string
 
 @description('Whether to deploy Azure OpenAI resources')
 param deployAzureOpenAI bool = true
@@ -114,6 +58,9 @@ param deployAzureOpenAI bool = true
 // Check supported versions here
 // https://learn.microsoft.com/azure/ai-services/openai/concepts/models#global-standard-model-availability
 param azureOpenAIAPIVersion string = '2024-10-21'
+
+@description('Backup storage redundancy for PostgreSQL Flexible Server')
+param backupStorageRedundancy string = 'Local'
 
 @description('Version of the Azure OpenAI API to use for embedding models')
 // Check supported version here
@@ -163,11 +110,11 @@ param embedDeploymentSku string                           // Set in main.paramet
 param embedDeploymentCapacity int                         // Set in main.parameters.json
 
 @description('Username for the PostgreSQL server')
-param administratorLoginUser string                       // Set in main.parameters.json
+param administratorLoginUser string = 'rtadmin${take(uniqueString(subscription().id, resourceGroup().id, name), 6)}'
 
 @secure()
 @description('Password for the PostgreSQL server')
-param administratorLoginPassword string                   // Set in main.parameters.json
+param administratorLoginPassword string = 'Aa1_${replace(newGuid(), '-', '')}'
 
 @description('Unique string creation')
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
@@ -182,7 +129,7 @@ var tags = { 'azd-env-name': name }
 param deployContainerApps bool
 
 @description('Name of content filter policy to be created for OpenAI')
-param contentFilterPolicyName string = 'rai-policy'
+param contentFilterPolicyName string = 'Microsoft.DefaultV2'
 
 @description('Name of the frontend app')
 var frontendAppName = 'rt-frontend'
@@ -213,12 +160,10 @@ var postgresServerPort = '5432'
 
 @description('Storage parameters of PostgreSQL Flexible server')
 param postgresServerStorage object = {
-  autoGrow: 'Disabled'
-  iops: '3000'
-  storageSizeGB: '32'
-  throughput: '125'
+  autoGrow: 'Enabled'
   tier: 'P20'
-  type: 'PremiumV2_LRS'
+  type: 'Premium_LRS'
+  storageSizeGB: '32'
 }
 
 @description('Sku of PostgreSQL Flexible server')
@@ -268,6 +213,7 @@ module postgresServer 'core/database/flexibleserver.bicep' = {
     storage: postgresServerStorage
     version: postgresVersion
     authType: postgresServerAuthType
+    backupStorageRedundancy: backupStorageRedundancy
     administratorLogin: administratorLoginUser
     administratorLoginPassword: administratorLoginPassword
     databaseNames: [
@@ -315,7 +261,6 @@ module keyVault 'core/keyvault/keyvault.bicep' = if (deployContainerApps) {
     openAIendpoint: openAI.outputs.modelInfos[0].endpoint
     openAIkey: openAI.outputs.modelInfos[0].key
   }
-  dependsOn: [ postgresServer, openAI ]
 }
 
 // Frontend app module
@@ -644,70 +589,64 @@ module openAI 'core/ai/cognitiveservices.bicep' = if (deployAzureOpenAI) {
   name: 'openai'
   params: {
     name: '${prefix}-openai'
-    location: openAILocation
+    location: location
     tags: tags
-    sku: {
-      name: 'S0'
-    }
     disableLocalAuth: false
     deployments: modelDeployments
-    contentFilterPolicyName: contentFilterPolicyName
   }
 }
 
-// Content filter Responsible AI policy for OpenAI models
-module raiPolicy 'core/ai/content-filter.bicep' = if (deployAzureOpenAI) {
-  name: 'raiPolicy'
-  params: {
-    name: '${prefix}-openai'
-    policyName: contentFilterPolicyName
-  }
-  dependsOn: [
-    openAI
-  ]
-}
+
+// Helper objects to safely dereference module outputs only when modules are deployed
+// Removed helper result objects (modules always deployed)
 
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output DEPLOY_AZURE_CONTAINERAPPS bool = deployContainerApps
 
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = deployContainerApps ? containerApps.outputs.environmentName : ''
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = deployContainerApps ? containerApps.outputs.registryLoginServer : ''
-output AZURE_CONTAINER_REGISTRY_NAME string = deployContainerApps ? containerApps.outputs.registryName : ''
+// Removed conditional container apps outputs to avoid null-dereference lint when module not deployed.
 
 output POSTGRES_HOST string = postgresServer.outputs.POSTGRES_DOMAIN_NAME
 output POSTGRES_NAME string = postgresServer.outputs.POSTGRES_NAME
 output POSTGRES_USERNAME string = administratorLoginUser
 output POSTGRES_DATABASE string = backendappDatabaseName
+
 output POSTGRES_PASSWORD string = administratorLoginPassword
 
-output AZURE_OPENAI_ENDPOINT string = deployAzureOpenAI ? openAI.outputs.endpoint : ''
-output AZURE_OPENAI_KEY string = deployAzureOpenAI ? openAI.outputs.modelInfos[0].key : ''
-output AZURE_OPENAI_API_VERSION string = deployAzureOpenAI ? azureOpenAIAPIVersion : ''
-output AZURE_OPENAI_CHAT_DEPLOYMENT string = deployAzureOpenAI ? chatDeploymentName : ''
-output AZURE_OPENAI_CHAT_DEPLOYMENT_VERSION string = deployAzureOpenAI ? chatDeploymentVersion : ''
-output AZURE_OPENAI_CHAT_DEPLOYMENT_CAPACITY int = deployAzureOpenAI ? chatDeploymentCapacity : 1
-output AZURE_OPENAI_CHAT_DEPLOYMENT_SKU string = deployAzureOpenAI ? chatDeploymentSku : ''
-output AZURE_OPENAI_CHAT_MODEL string = deployAzureOpenAI ? chatModelName : ''
-output AZURE_OPENAI_EMBED_DEPLOYMENT string = deployAzureOpenAI ? embedDeploymentName : ''
-output AZURE_OPENAI_EMBED_DEPLOYMENT_VERSION string = deployAzureOpenAI ? embedDeploymentVersion : ''
-output AZURE_OPENAI_API_VERSION_EMBED string = deployAzureOpenAI ? azureEmbedAIAPIVersion : ''
-output AZURE_OPENAI_EMBED_DEPLOYMENT_CAPACITY int = deployAzureOpenAI ? embedDeploymentCapacity : 1
-output AZURE_OPENAI_EMBED_DEPLOYMENT_SKU string = deployAzureOpenAI ? embedDeploymentSku : ''
-output AZURE_OPENAI_EMBED_MODEL string = deployAzureOpenAI ? embedModelName : ''
 
-output SERVICE_BACKEND_IDENTITY_PRINCIPAL_ID string = deployContainerApps ? backend.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID : ''
-output SERVICE_BACKEND_IDENTITY_NAME string = deployContainerApps ? backend.outputs.SERVICE_WEB_IDENTITY_NAME : ''
-output SERVICE_BACKEND_NAME string = deployContainerApps ? backend.outputs.SERVICE_WEB_NAME : ''
-output SERVICE_BACKEND_URI string = deployContainerApps ? backend.outputs.SERVICE_WEB_URI : ''
-output SERVICE_BACKEND_IMAGE_NAME string = deployContainerApps ? backend.outputs.SERVICE_WEB_IMAGE_NAME : ''
+output AZURE_OPENAI_ENDPOINT string = openAI.outputs.endpoint
+output AZURE_OPENAI_API_VERSION string = azureOpenAIAPIVersion
+output AZURE_OPENAI_CHAT_DEPLOYMENT string = chatDeploymentName
+output AZURE_OPENAI_CHAT_DEPLOYMENT_VERSION string = chatDeploymentVersion
+output AZURE_OPENAI_CHAT_DEPLOYMENT_CAPACITY int = chatDeploymentCapacity
+output AZURE_OPENAI_CHAT_DEPLOYMENT_SKU string = chatDeploymentSku
+output AZURE_OPENAI_CHAT_MODEL string = chatModelName
+output AZURE_OPENAI_EMBED_DEPLOYMENT string = embedDeploymentName
+output AZURE_OPENAI_EMBED_DEPLOYMENT_VERSION string = embedDeploymentVersion
+output AZURE_OPENAI_API_VERSION_EMBED string = azureEmbedAIAPIVersion
+output AZURE_OPENAI_EMBED_DEPLOYMENT_CAPACITY int = embedDeploymentCapacity
+output AZURE_OPENAI_EMBED_DEPLOYMENT_SKU string = embedDeploymentSku
+output AZURE_OPENAI_EMBED_MODEL string = embedModelName
 
-output SERVICE_ARIZE_URI string = deployContainerApps ? arize.outputs.SERVICE_WEB_URI : ''
-output SERVICE_ARIZE_IDENTITY_PRINCIPAL_ID string = deployContainerApps ? arize.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID : ''
-output ARIZE_SQL_URI string = !deployContainerApps ? arizeSQLUrl : ''
+// Outputs for container registry (needed so azd can set AZURE_CONTAINER_REGISTRY_ENDPOINT)
+// Only emit when container apps are deployed; otherwise empty string
+// Compute registry name deterministically (matches module param value) to avoid referencing conditional module outputs
+var computedRegistryName = '${replace(prefix, '-', '')}registry'
+output AZURE_CONTAINER_REGISTRY_NAME string = deployContainerApps ? computedRegistryName : ''
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = deployContainerApps ? '${computedRegistryName}.azurecr.io' : ''
 
-output SERVICE_FRONTEND_IDENTITY_PRINCIPAL_ID string = deployContainerApps ? frontend.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID : ''
-output SERVICE_FRONTEND_IDENTITY_NAME string = deployContainerApps ? frontend.outputs.SERVICE_WEB_IDENTITY_NAME : ''
-output SERVICE_FRONTEND_NAME string = deployContainerApps ? frontend.outputs.SERVICE_WEB_NAME : ''
-output SERVICE_FRONTEND_URI string = deployContainerApps ? frontend.outputs.SERVICE_WEB_URI : ''
-output SERVICE_FRONTEND_IMAGE_NAME string = deployContainerApps ? frontend.outputs.SERVICE_WEB_IMAGE_NAME : ''
+output SERVICE_BACKEND_IDENTITY_PRINCIPAL_ID string = backend.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID
+output SERVICE_BACKEND_IDENTITY_NAME string = backend.outputs.SERVICE_WEB_IDENTITY_NAME
+output SERVICE_BACKEND_NAME string = backend.outputs.SERVICE_WEB_NAME
+output SERVICE_BACKEND_URI string = backend.outputs.SERVICE_WEB_URI
+output SERVICE_BACKEND_IMAGE_NAME string = backend.outputs.SERVICE_WEB_IMAGE_NAME
+
+output SERVICE_ARIZE_URI string = arize.outputs.SERVICE_WEB_URI
+output SERVICE_ARIZE_IDENTITY_PRINCIPAL_ID string = arize.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID
+output ARIZE_SQL_URI string = arizeSQLUrl
+
+output SERVICE_FRONTEND_IDENTITY_PRINCIPAL_ID string = frontend.outputs.SERVICE_WEB_IDENTITY_PRINCIPAL_ID
+output SERVICE_FRONTEND_IDENTITY_NAME string = frontend.outputs.SERVICE_WEB_IDENTITY_NAME
+output SERVICE_FRONTEND_NAME string = frontend.outputs.SERVICE_WEB_NAME
+output SERVICE_FRONTEND_URI string = frontend.outputs.SERVICE_WEB_URI
+output SERVICE_FRONTEND_IMAGE_NAME string = frontend.outputs.SERVICE_WEB_IMAGE_NAME

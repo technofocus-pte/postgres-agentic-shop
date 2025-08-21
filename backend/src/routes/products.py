@@ -84,7 +84,7 @@ async def get_product_reviews(
 
 @router.get("/search/debug")
 async def get_search_debug_logs(trace_id: Optional[str] = Query(None)):
-    df = get_trace_dataframe(trace_id)
+    df = get_trace_dataframe(trace_id, is_search_trace=True)
     return SearchTraceParser(df).parse()
 
 

@@ -27,8 +27,6 @@ param exportPolicy object = {
   status: 'enabled'
 }
 
-@description('Metadata search settings')
-param metadataSearch string = 'Disabled'
 
 @description('Options for bypassing network rules')
 param networkRuleBypassOptions string = 'AzureServices'
@@ -55,11 +53,6 @@ param sku object = {
   name: 'Basic'
 }
 
-@description('Soft delete policy settings')
-param softDeletePolicy object = {
-  retentionDays: 7
-  status: 'disabled'
-}
 
 @description('Trust policy settings')
 param trustPolicy object = {
@@ -70,7 +63,8 @@ param trustPolicy object = {
 @description('Zone redundancy setting')
 param zoneRedundancy string = 'Disabled'
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2024-11-01-preview' = {
+// Updated to latest GA API version 2025-04-01 (replaces previous preview 2024-11-01-preview)
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   name: name
   location: location
   tags: tags
@@ -80,7 +74,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2024-11-01-pr
     anonymousPullEnabled: anonymousPullEnabled
     dataEndpointEnabled: dataEndpointEnabled
     encryption: encryption
-    metadataSearch: metadataSearch
     networkRuleBypassOptions: networkRuleBypassOptions
     policies:{
       quarantinePolicy: quarantinePolicy
@@ -88,7 +81,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2024-11-01-pr
       retentionPolicy: retentionPolicy
       exportPolicy: exportPolicy
       azureADAuthenticationAsArmPolicy: azureADAuthenticationAsArmPolicy
-      softDeletePolicy: softDeletePolicy
     }
     publicNetworkAccess: publicNetworkAccess
     zoneRedundancy: zoneRedundancy

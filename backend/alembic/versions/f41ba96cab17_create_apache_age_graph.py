@@ -195,8 +195,8 @@ def upgrade() -> None:
 
     logger.info("Creating edges between product-review edges...")
     op.execute(
-        """
-       SELECT * FROM cypher('product_review_graph', $$
+        f"""
+       SELECT * FROM cypher('{GRAPH_NAME}', $$
             MATCH (p:Product), (r:Review)
             WHERE p.id = r.product_id
             CREATE (p)-[rel:HAS_REVIEW]->(r)
@@ -208,11 +208,11 @@ def upgrade() -> None:
 
     logger.info("Creating edges between review-feature positive_sentiment edges...")
     op.execute(
-        """
-        SELECT * FROM ag_catalog.cypher('product_review_graph', $$
+        f"""
+        SELECT * FROM ag_catalog.cypher('{GRAPH_NAME}', $$
             MATCH (r:Review), (f:Feature)
             WHERE r.feature_id = f.id AND r.sentiment = 'positive'
-            CREATE (r)-[rel:positive_sentiment {sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}]->(f)
+            CREATE (r)-[rel:positive_sentiment {{sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}}]->(f)
             RETURN count(rel) as relationship_count
         $$) as (relationship_count agtype);
     """,
@@ -221,11 +221,11 @@ def upgrade() -> None:
 
     logger.info("Creating edges between review-feature negative_sentiment edges...")
     op.execute(
-        """
-        SELECT * FROM ag_catalog.cypher('product_review_graph', $$
+        f"""
+        SELECT * FROM ag_catalog.cypher('{GRAPH_NAME}', $$
             MATCH (r:Review), (f:Feature)
             WHERE r.feature_id = f.id AND r.sentiment = 'negative'
-            CREATE (r)-[rel:negative_sentiment {sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}]->(f)
+            CREATE (r)-[rel:negative_sentiment {{sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}}]->(f)
             RETURN count(rel) as relationship_count
         $$) as (relationship_count agtype);
     """,
@@ -234,11 +234,11 @@ def upgrade() -> None:
 
     logger.info("Creating edges between review-feature neutral_sentiment edges...")
     op.execute(
-        """
-        SELECT * FROM ag_catalog.cypher('product_review_graph', $$
+        f"""
+        SELECT * FROM ag_catalog.cypher('{GRAPH_NAME}', $$
             MATCH (r:Review), (f:Feature)
             WHERE r.feature_id = f.id AND r.sentiment = 'neutral'
-            CREATE (r)-[rel:neutral_sentiment {sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}]->(f)
+            CREATE (r)-[rel:neutral_sentiment {{sentiment: r.sentiment, product_id: r.product_id, feature_id: r.feature_id}}]->(f)
             RETURN count(rel) as relationship_count
         $$) as (relationship_count agtype);
     """,

@@ -16,6 +16,8 @@ from src.utils.embeddings import (
     create_and_push_embeddings_for_products,
     create_and_push_embeddings_for_reviews,
 )
+from pgvector.psycopg2 import register_vector
+
 
 # revision identifiers, used by Alembic.
 revision: str = "cc30da9b96c1"  # pragma: allowlist secret
@@ -27,6 +29,9 @@ logger = logging.getLogger()
 
 
 def upgrade() -> None:
+    # Register pgvector extension for vector columns support
+    register_vector(op.get_bind())
+
     # create embeddings table
     asyncio.run(create_and_push_embeddings_for_products())
     asyncio.run(create_and_push_embeddings_for_reviews())

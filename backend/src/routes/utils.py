@@ -17,39 +17,119 @@ def get_phoenix_client():
 
 
 def filter_trace_data(df: DataFrame):
-    df = df[
-        [
-            "name",
-            "span_kind",
-            "parent_id",
-            "start_time",
-            "end_time",
-            "context.trace_id",
-            "context.span_id",
-            "attributes.output.value",
-            "attributes.input.value",
-            "status_code",
-            "status_message",
-        ]
+    desired_cols = [
+        "name",
+        "span_kind",
+        "parent_id",
+        "start_time",
+        "end_time",
+        "context.trace_id",
+        "context.span_id",
+        "attributes.output.value",
+        "attributes.input.value",
+        "status_code",
+        "status_message",
     ]
-    df = df[
-        df["name"].apply(
-            lambda x: x == "Workflow.run"
-            or x == "AgentWorkflow.run_agent_step"
-            or x == "FunctionTool.acall"
-            or x.startswith("MultiAgentFlow"),
-        )
-    ]
+    # Only keep columns that actually exist to avoid KeyError in production
+    existing_cols = [c for c in desired_cols if c in df.columns]
+    if existing_cols:
+        df = df[existing_cols]
+
     df = df.sort_values(by="start_time", ascending=True)
     return df
 
 
-def get_trace_dataframe(trace_id: str):
+def _format_tuple_for_where(names: list[str]) -> str:
+    if not names:
+        return "()"
+    if len(names) == 1:
+        return f"('{names[0]}',)"
+    return "(" + ",".join(f"'{n}'" for n in names) + ")"
+
+
+def _find_missing_agents_from_df(
+    df,
+    required_agent_names: list[str],
+    query_agent_spans: list[str] = None,
+    is_search_trace: bool = False,
+) -> list[str]:
+    """
+    Determine which required agents are missing from the dataframe.
+
+    Additionally, require that at least one query-agent tool is present
+    ONLY when all required agents are missing. If required agents are all
+    present (or partially present), we don't enforce tool presence.
+    """
+    missing: set[str] = set()
+
+    # If no data, treat everything as missing; also if 'name' column missing, we can't evaluate spans
+    if df is None or df.empty or ("name" not in df.columns):
+        missing.update(required_agent_names)
+        return list(missing)
+
+    if not is_search_trace:
+        for agent_name in required_agent_names:
+            if df[df["name"] == agent_name].empty:
+                missing.add(agent_name)
+    else:
+        # For search traces: required agents are not expected.
+        # Enforce: at least one query-agent span must be present.
+        if query_agent_spans:
+            tools_present = df["name"].isin(query_agent_spans).any()
+            if not tools_present:
+                missing.update(query_agent_spans)
+
+    return list(missing)
+
+
+def get_trace_dataframe(trace_id: str, is_search_trace: bool = False):
+    """
+    Single-fetch version: query Phoenix once (server-side filtering via .where/.select)
+    and verify completeness. If incomplete, return HTTP 202 with Retry-After and details.
+    """
     client = get_phoenix_client()
-    query = SpanQuery().where(f"trace_id == '{trace_id}'")
+    required_agent_names = [
+        "MultiAgentFlow.planning",
+        "MultiAgentFlow.presentation",
+        "MultiAgentFlow._done",
+    ]
+    query_agent_spans = ["FunctionAgent.run", "FunctionAgent._done"]
+    tuple_literal = _format_tuple_for_where(required_agent_names)
+
+    # Group name predicates together so status filter applies to all
+    name_predicates = (
+        f"name in {tuple_literal} "
+        f"or 'MultiAgentFlow' in name "
+        f"or name == 'FunctionAgent.run' "
+        f"or name == 'FunctionAgent.init_run' "
+        f"or name == 'FunctionAgent.run_agent_step' "
+        f"or name == 'FunctionTool.acall' "
+        f"or name == 'FunctionAgent._done'"
+    )
+    where_clause = (
+        f"trace_id == '{trace_id}' and "
+        f"({name_predicates}) "
+        f"and status_code == 'OK'"
+    )
+
+    query = SpanQuery().where(where_clause)
     df = client.query_spans(query, project_name=settings.PHOENIX_PROJECT_NAME)
     if df.empty or df is None:
         raise HTTPException(status_code=404, detail="Trace not found")
+
+    missing_agents = _find_missing_agents_from_df(
+        df, required_agent_names, query_agent_spans, is_search_trace
+    )
+
+    if missing_agents:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "Trace incomplete: some agents are missing or not OK. Retry later.",
+                "trace_id": trace_id,
+                "missing_or_not_ok_agents": missing_agents,
+            },
+        )
     return filter_trace_data(df)
 
 

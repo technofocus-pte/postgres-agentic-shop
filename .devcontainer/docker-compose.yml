@@ -11,25 +11,7 @@ services:
     networks:
       - agentic-net
 
-  arize-phoenix:
-    container_name: arize-phoenix
-    profiles: ["tracing"]
-    build:
-      context: ../arize-phoenix
-      dockerfile: Dockerfile
-    ports:
-      - "6006:6006"
-      - "4317:4317"
-    volumes:
-      - phoenix_data:/root/.phoenix/
-    networks:
-      - agentic-net
-
 networks:
   agentic-net:
     name: agentic-net
     driver: bridge
-
-volumes:
-  phoenix_data:
-    name: phoenix_data

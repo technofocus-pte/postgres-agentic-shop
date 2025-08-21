@@ -56,8 +56,12 @@ class SearchTraceParser(BaseParser):
 
     def _extract_user_query_agent_info(self, df):
         workflow_run_rows = df[
-            (df["name"] == "Workflow.run") & (df["parent_id"].isnull())
+            (df["name"] == "FunctionAgent.run") & (df["parent_id"].isnull())
         ]
+
+        user_msg = ""
+        tool_used = ""
+        exec_time = None
         for _, row in workflow_run_rows.iterrows():
             output_json = self._safe_json_load(row.get("attributes.output.value"))
             if not output_json:
@@ -67,27 +71,42 @@ class SearchTraceParser(BaseParser):
                 != AgentNames.USER_QUERY_AGENT.value
             ):
                 continue
-            input_json = self._safe_json_load(row.get("attributes.input.value"))
-            user_msg = (
-                input_json.get("kwargs", {}).get("user_msg", "") if input_json else ""
-            )
+
             tool_calls = output_json.get("tool_calls", [])
             tool_used = tool_calls[0].get("tool_name", "") if tool_calls else ""
             exec_time, start_time, end_time = self._get_user_query_agent_execution_time(
                 df,
             )
-            if user_msg and tool_used and exec_time is not None:
-                return {
-                    "input": user_msg,
-                    "tool_used": tool_used,
-                    "execution_time": exec_time,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                }
+
+            agent_init_row = df[
+                (df["name"] == "FunctionAgent.init_run")
+                & (df["parent_id"] == row["context.span_id"])
+            ]
+
+            input_json = self._safe_json_load(
+                agent_init_row["attributes.output.value"].item()
+            )
+            user_msg = (
+                input_json.get("input", [])[0].get("blocks", [])[0].get("text")
+                if input_json
+                else ""
+            )
+
+            if not user_msg:
+                continue
+
+        if user_msg and tool_used and exec_time is not None:
+            return {
+                "input": user_msg,
+                "tool_used": tool_used,
+                "execution_time": exec_time,
+                "start_time": start_time,
+                "end_time": end_time,
+            }
         return None
 
     def _get_user_query_agent_execution_time(self, df):
-        agent_step_rows = df[df["name"] == "AgentWorkflow.run_agent_step"]
+        agent_step_rows = df[df["name"] == "FunctionAgent.run_agent_step"]
         for _, row in agent_step_rows.iterrows():
             start_time = row["start_time"]
             end_time = row["end_time"]
@@ -156,11 +175,3 @@ class SearchTraceParser(BaseParser):
         for tool in tools_not_called:
             self._add_placeholder_node(label=tool, level=level)
             level += 1
-
-    def _safe_json_load(self, val):
-        if not val:
-            return {}
-        try:
-            return json.loads(val)
-        except Exception:
-            return {}

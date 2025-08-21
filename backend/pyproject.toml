@@ -23,11 +23,10 @@ llama-index-vector-stores-postgres = "^0.4.2"
 llama-index-storage-chat-store-postgres = "^0.2.0"
 sse-starlette = "^2.2.1"
 llama-index = "^0.12.33"
-arize-phoenix-otel = "^0.9.2"
 openinference-instrumentation-llama-index = "^4.2.1"
-arize-phoenix = "^8.31.0"
 json5 = "^0.12.0"
 mem0ai = "^0.1.115"
+arize-phoenix = "^11.24.1"
 
 
 [tool.poetry.group.dev.dependencies]

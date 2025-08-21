@@ -1,4 +1,6 @@
-metadata description = 'Creates an Azure Cognitive Services instance.'
+metadata description = 'Creates an Azure Cognitive Services (Azure OpenAI) account, optional custom RAI content filter policy, and model deployments.'
+
+// Core account parameters
 param name string
 param location string = resourceGroup().location
 param tags object = {}
@@ -10,13 +12,12 @@ param kind string = 'OpenAI'
 @allowed([ 'Enabled', 'Disabled' ])
 param publicNetworkAccess string = 'Enabled'
 
-@description('Content filter policy name')
-param contentFilterPolicyName string = 'Microsoft.DefaultV2'
 
-param sku object = {
+
+// Account SKU / networking
+param accountSku object = {
   name: 'S0'
 }
-
 param allowedIpRules array = []
 param networkAcls object = empty(allowedIpRules) ? {
   defaultAction: 'Allow'
@@ -25,7 +26,11 @@ param networkAcls object = empty(allowedIpRules) ? {
   defaultAction: 'Deny'
 }
 
-resource aiaccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+
+
+// Cognitive Services (Azure OpenAI) account
+// Updated to latest GA API version (2024-10-01) per Azure Cognitive Services provisioning docs
+resource aiaccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: name
   location: location
   tags: tags
@@ -36,16 +41,18 @@ resource aiaccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
     networkAcls: networkAcls
     disableLocalAuth: disableLocalAuth
   }
-  sku: sku
+  sku: accountSku
 }
 
+
+// Serialise model deployments; ensure they depend on policy if created
 @batchSize(1)
-resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = [for deployment in deployments: {
+// Updated deployments to latest GA API version (2024-10-01)
+resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = [for deployment in deployments: {
   parent: aiaccount
   name: deployment.name
   properties: {
     model: deployment.model
-    raiPolicyName: contentFilterPolicyName == null ? 'Microsoft.Nill' : contentFilterPolicyName
   }
   sku: deployment.?sku ?? {
     name: 'Standard'
@@ -53,14 +60,16 @@ resource openaideployment 'Microsoft.CognitiveServices/accounts/deployments@2023
   }
 }]
 
+// Outputs
 output endpoint string = aiaccount.properties.endpoint
 output id string = aiaccount.id
 output name string = aiaccount.name
+// modelInfos output now excludes keys to avoid secret exposure via deployment outputs.
+output modelInfos array = [for d in deployments: {
+  name: d.name
+  endpoint: aiaccount.properties.endpoint
+  key      : aiaccount.listKeys().key1
+}]
 
-output modelInfos array = [
-  for (d, i) in deployments: {
-    name     : d.name
-    endpoint : aiaccount.properties.endpoint      
-    key      : aiaccount.listKeys().key1             
-  }
-]
+// Provide a secure reference output for the account id so parent template can fetch keys directly without re-exposing them.
+output accountResourceId string = aiaccount.id

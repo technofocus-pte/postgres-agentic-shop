@@ -1,4 +1,5 @@
 from collections import defaultdict
+import json
 
 from pandas import DataFrame
 from src.trace_parser.dataclasses import Edge, Node, NodeData
@@ -278,3 +279,11 @@ class BaseParser:
             unique_edges,
             key=lambda edge: (int(edge.source), int(edge.target)),
         )
+
+    def _safe_json_load(self, val):
+        if not val:
+            return {}
+        try:
+            return json.loads(val)
+        except Exception:
+            return {}

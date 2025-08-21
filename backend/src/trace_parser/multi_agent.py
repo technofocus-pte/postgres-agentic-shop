@@ -42,10 +42,12 @@ class MultiAgentParser(BaseParser):
         workflow_run_rows = self._get_workflow_run_rows(df)
         for _, row in workflow_run_rows.iterrows():
             parent_agent_name = self._get_parent_agent_name(df, row)
+            agent_init_row = self._get_agent_init_row(df, row)
             if parent_agent_name not in self.AGENT_LABELS:
                 continue
             try:
-                input_msg, output_msg = self._extract_input_output(row)
+                input_msg = self._extract_input(agent_init_row)
+                output_msg = self._extract_output(row)
                 reasoning, output_msg = self._extract_reasoning(output_msg)
             except Exception as e:
                 logger.exception(e)
@@ -82,9 +84,19 @@ class MultiAgentParser(BaseParser):
 
     def _get_workflow_run_rows(self, df):
         return df[
-            (df["name"] == "Workflow.run")
+            (df["name"] == "FunctionAgent.run")
             & (df["attributes.output.value"].notnull())
             & (df["attributes.input.value"].notnull())
+        ]
+
+    def _get_agent_init_row(self, df, parent_node):
+        """
+        Extracts the agent initialization rows based on the workflow run row.
+        This node contains the input of the agent.
+        """
+        return df[
+            (df["name"] == "FunctionAgent.init_run")
+            & (df["parent_id"] == parent_node["context.span_id"])
         ]
 
     def _get_parent_agent_name(self, df, row):
@@ -93,17 +105,24 @@ class MultiAgentParser(BaseParser):
             return df.loc[df["context.span_id"] == parent_agent_id, "name"].values[0]
         return None
 
-    def _extract_input_output(self, row):
-        inputs = json.loads(row["attributes.input.value"])
-        outputs = json.loads(row["attributes.output.value"])
-        input_msg = inputs.get("kwargs", {}).get("user_msg", "")
-        output_msg = outputs.get("response", {}).get("blocks", [{}])[0].get("text", "")
+    def _extract_input(self, row):
+        inputs = self._safe_json_load(row["attributes.output.value"].item())
+        input_msg = (
+            inputs.get("input", [])[0].get("blocks", [])[0].get("text")
+            if inputs
+            else ""
+        )
         input_msg = print_pretty_with_embedded_json(input_msg)
+        return input_msg
+
+    def _extract_output(self, row):
+        outputs = json.loads(row["attributes.output.value"])
+        output_msg = outputs.get("response", {}).get("blocks", [{}])[0].get("text", "")
         output_msg = print_pretty_with_embedded_json(output_msg)
         json_block = extract_json_blocks(output_msg)
         if json_block:
             output_msg = json_block[0]
-        return input_msg, output_msg
+        return output_msg
 
     def _extract_reasoning(self, output_msg):
         reasoning = []
@@ -123,13 +142,16 @@ class MultiAgentParser(BaseParser):
     def _add_workflow_complete_node(
         self,
         current_level: int,
-        user_query_agent_flow: bool,
+        user_query_agent_flow: bool = False,
     ) -> list[dict]:
 
         wf_spans = [
             span_id
             for span_id, span_name in self.spans["name"].items()
-            if span_name.startswith("Workflow.run")
+            if (
+                span_name.startswith("MultiAgentFlow.run")
+                or span_name.startswith("FunctionAgent.run.")
+            )
             and self.spans["parent_id"].get(span_id) is None
         ]
 

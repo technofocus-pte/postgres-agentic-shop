@@ -111,7 +111,7 @@ class MultiAgentFlow(Workflow):
         )
         await self._setup_workflow_context(ctx, ev)
 
-        user_profile = await ctx.get("user_profile")
+        user_profile = await ctx.store.get("user_profile")
         planning_agent_query = f"Generate an execution plan based on the following user profile\n \
             user={user_profile} \n"
 
@@ -142,7 +142,7 @@ class MultiAgentFlow(Workflow):
             ctx.send_event(InventoryEvent())
             triggered_agents.append(InventoryCompletedEvent)
 
-        await ctx.set("triggered_agents", triggered_agents)
+        await ctx.store.set("triggered_agents", triggered_agents)
 
     @step
     async def personalize_product(
@@ -150,9 +150,9 @@ class MultiAgentFlow(Workflow):
         ctx: Context,
         ev: ProductPersonalizationEvent,
     ) -> ProductPersonalizationCompletedEvent:
-        user_info = await ctx.get("user_profile")
-        product_info = await ctx.get("product_information")
-        vaiants_info = await ctx.get("product_variants")
+        user_info = await ctx.store.get("user_profile")
+        product_info = await ctx.store.get("product_information")
+        vaiants_info = await ctx.store.get("product_variants")
 
         try:
             result = await self.product_personalization_agent.run(
@@ -173,8 +173,8 @@ class MultiAgentFlow(Workflow):
         ev: ReviewsEvent,
     ) -> ReviewsCompletedEvent | EvaluationEvent:
 
-        user_info = await ctx.get("user_profile")
-        user_message = await ctx.get("user_msg")
+        user_info = await ctx.store.get("user_profile")
+        user_message = await ctx.store.get("user_msg")
 
         self_reflection_prompt = ""
         generate_error_prompt = ""
@@ -254,8 +254,8 @@ class MultiAgentFlow(Workflow):
         ctx: Context,
         ev: InventoryEvent,
     ) -> InventoryCompletedEvent:
-        product_id = await ctx.get("product_id")
-        user_info = await ctx.get("user_profile")
+        product_id = await ctx.store.get("product_id")
+        user_info = await ctx.store.get("user_profile")
 
         try:
             result = await self.inventory_agent.run(
@@ -287,7 +287,7 @@ class MultiAgentFlow(Workflow):
 
         trace_id = get_current_span().get_span_context().trace_id
 
-        triggered_agents = await ctx.get("triggered_agents")
+        triggered_agents = await ctx.store.get("triggered_agents")
         result_current_agents = ctx.collect_events(
             ev,
             triggered_agents,
@@ -300,7 +300,7 @@ class MultiAgentFlow(Workflow):
             ctx,
         )
 
-        user_msg = await ctx.get("user_msg")
+        user_msg = await ctx.store.get("user_msg")
 
         result = await self.presentation_agent.run(
             textwrap.dedent(
@@ -349,12 +349,12 @@ class MultiAgentFlow(Workflow):
         product_info = ProductSchema(**product.to_dict()).model_dump()
         variants_info = format_variants(variants)
 
-        await ctx.set("user_id", ev.user_id)
-        await ctx.set("product_id", ev.product_id)
-        await ctx.set("user_msg", ev.user_msg)
-        await ctx.set("user_profile", user_info)
-        await ctx.set("product_information", product_info)
-        await ctx.set("product_variants", variants_info)
+        await ctx.store.set("user_id", ev.user_id)
+        await ctx.store.set("product_id", ev.product_id)
+        await ctx.store.set("user_msg", ev.user_msg)
+        await ctx.store.set("user_profile", user_info)
+        await ctx.store.set("product_information", product_info)
+        await ctx.store.set("product_variants", variants_info)
 
     async def _get_user_preferences_from_memory(self, user_id: int) -> list[str]:
 
@@ -384,8 +384,8 @@ class MultiAgentFlow(Workflow):
             logger.info("Memory Updated")
 
     async def _get_existing_personalized_section(self, ctx) -> Optional[dict]:
-        user_id = await ctx.get("user_id")
-        product_id = await ctx.get("product_id")
+        user_id = await ctx.store.get("user_id")
+        product_id = await ctx.store.get("product_id")
         existing_personalized_section = None
 
         async with Session() as db:

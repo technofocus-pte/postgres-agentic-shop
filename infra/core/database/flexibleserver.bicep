@@ -11,11 +11,10 @@ param storage object
   'EntraPassword'
 ])
 param authType string = 'EntraPassword'
-
+param backupStorageRedundancy string = ''
 param administratorLogin string = ''
 @secure()
 param administratorLoginPassword string = ''
-
 param zone string = ''
 param databaseNames array = []
 param allowAzureIPsFirewall bool = false
@@ -48,6 +47,7 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-03-01-pr
   properties: union(authProperties, {
     version: version
     storage: storage
+    backupStorageRedundancy: backupStorageRedundancy
     availabilityZone: zone
     highAvailability: {
       mode: 'Disabled'

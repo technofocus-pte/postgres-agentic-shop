@@ -13,16 +13,8 @@
     },
     "principalName": {
       "value": "${AZURE_PRINCIPAL_NAME=toSet}"
-    },
-    "administratorLoginUser": {
-      "value": "${ADMINISTRATOR_LOGIN_USER=rtbackend}"
-    },
-    "administratorLoginPassword": {
-      "value": "${ADMINISTRATOR_LOGIN_PASSWORD=Agent2shop}"
-    },
-    "openAILocation": {
-      "value": "${AZURE_OPENAI_LOCATION}"
-    },
+  },
+
     "deployAzureOpenAI": {
       "value": "${DEPLOY_AZURE_OPENAI=true}"
     },

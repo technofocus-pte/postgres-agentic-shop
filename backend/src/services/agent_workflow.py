@@ -39,7 +39,7 @@ class MultiAgentWorkflowService:
         memory: BaseMemory,
         product_id: Optional[int] = None,
         message_queue: asyncio.Queue = None,
-        timeout: int = 60,
+        timeout: int = settings.MULTIAGENT_WORKFLOW_TIMEOUT,
         verbose: bool = settings.VERBOSE,
         fault_correction: bool = False,
     ):

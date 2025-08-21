@@ -2,6 +2,8 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
+# (Removed) Ensure Azure CLI rdbms extension function
+
 # Simple cleanup and exit function
 function Exit-WithError {
     param($message, $statusCode = 1, $errorType = "general")
@@ -149,6 +151,30 @@ function Get-AllowedRegions {
         Exit-WithError "Cannot find infra/main.bicep file"
     }
 
+    # Regex-first attempt: handle cases where @metadata or other annotations sit between @allowed and the param line
+    try {
+        $bicepContent = Get-Content "infra/main.bicep" -Raw
+        # Match the @allowed([ ... ]) block that is followed somewhere later by the location param
+        # (?s) enables singleline so . matches newlines
+        $pattern = '(?s)@allowed\(\[(?<list>.*?)\]\).*?\bparam\s+location\s+string\b'
+        $m = [regex]::Match($bicepContent, $pattern)
+        if ($m.Success) {
+            $list = $m.Groups['list'].Value
+            $regionMatches = [regex]::Matches($list, "'([^']+)'")
+            $regionsRegex = @()
+            foreach ($rm in $regionMatches) { $regionsRegex += $rm.Groups[1].Value }
+            if ($regionsRegex.Count -gt 0) {
+                Write-Host "Found $($regionsRegex.Count) allowed regions via regex" -ForegroundColor Cyan
+                if ($failedRegion) {
+                    return $regionsRegex | Where-Object { $_ -ne $failedRegion.ToLower() }
+                }
+                return $regionsRegex
+            }
+        }
+    } catch {
+        Write-Host "Regex parse of allowed regions failed, falling back to line-by-line parsing: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
     try {
         # Read the bicep file line by line and parse the @allowed section
         $bicepLines = Get-Content "infra/main.bicep"
@@ -171,7 +197,8 @@ function Get-AllowedRegions {
                 if ($line -match '^\]\)') {
                     $inAllowedSection = $false
                     # Check if the next several lines contain "param location string"
-                    for ($j = $i+1; $j -lt [Math]::Min($i+10, $bicepLines.Count); $j++) {
+                    # Include a slightly larger window to allow for @metadata blocks between annotations and the param
+                    for ($j = $i+1; $j -le [Math]::Min($i+20, $bicepLines.Count); $j++) {
                         $nextLine = $bicepLines[$j].Trim()
                         if ($nextLine -match '^param location string') {
                             $foundLocationParam = $true
@@ -245,7 +272,7 @@ function Test-ContainerAppsQuotaInRegion {
 # Get PostgreSQL SKU configuration from parameters file
 function Get-PostgreSQLSkuConfig {
     # First try to get from bicep file (default configuration)
-    $defaultSku = "Standard_D2ds_v4"
+    $defaultSku = "Standard_B2ms"
 
     if (Test-Path "infra/main.bicep") {
         try {
@@ -684,6 +711,7 @@ function Test-PostgreSQLSku {
 Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host "Azure Deployment Validation" -ForegroundColor Cyan
 Write-Host "===========================================" -ForegroundColor Cyan
+
 
 # First validate environment name
 Test-EnvironmentName
