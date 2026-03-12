@@ -20,11 +20,14 @@ resource webIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
   location: location
 }
 
-var keyvaultIdentitySecrets = [for secret in secrets.keyVaultReferences: {
+var keyvaultIdentitySecrets = [for secret in (contains(secrets, 'keyVaultReferences') ? secrets.keyVaultReferences : []): {
   name: secret.name
   keyVaultUrl: secret.keyVaultUrl
   identity: webIdentity.id
 }]
+
+var inlineSecrets = contains(secrets, 'inline') ? secrets.inline : []
+var resolvedSecrets = contains(secrets, 'keyVaultReferences') ? keyvaultIdentitySecrets : inlineSecrets
 
 module backendapp '../core/host/container-app.bicep' = {
   name: '${serviceName}-container-app-module'
@@ -46,7 +49,7 @@ module backendapp '../core/host/container-app.bicep' = {
     env: union(
       environmentVariables, []
     )
-    secrets: keyvaultIdentitySecrets
+    secrets: resolvedSecrets
     targetPort: 8000
   }
 }
