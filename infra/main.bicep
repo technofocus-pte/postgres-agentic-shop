@@ -299,7 +299,9 @@ module backend 'app/backend.bicep' = if (deployContainerApps) {
     environmentVariables: backendEnv
     secrets: backendSecrets
   }
-  dependsOn: [ checkSecrets ]
+  dependsOn: [
+    waitForSecretPropagation
+  ]
 }
 
 // Arize Phoenix module
@@ -319,7 +321,9 @@ module arize 'core/arize-phoenix/arize.bicep' = if (deployContainerApps) {
     environmentVariables: arizeEnv
     secrets: arizeSecrets
   }
-  dependsOn: [ checkSecrets ]
+  dependsOn: [
+    waitForSecretPropagation
+  ]
 }
 
 // Create backend app identity
@@ -379,12 +383,23 @@ resource checkSecrets 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (d
       KEYVAULT_NAME="${KEYVAULT_NAME}"
       SECRETS=("postgres-host" "postgres-username" "postgres-database" "postgres-password" "postgres-port" "azure-openai-endpoint" "azure-openai-key")
 
-      # Check each secret
+      # Wait for RBAC propagation before validating secrets.
       for SECRET in "${SECRETS[@]}"; do
         echo -e "\nChecking if secret $SECRET exists in Key Vault $KEYVAULT_NAME..."
-        az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET" > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
-          echo -e "\nSecret $SECRET does not exist in Key Vault $KEYVAULT_NAME."
+        found=false
+
+        for i in {1..20}; do
+          if az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET" > /dev/null 2>&1; then
+            found=true
+            break
+          fi
+
+          echo "Attempt $i/20: secret $SECRET not accessible yet, retrying in 15s..."
+          sleep 15
+        done
+
+        if [ "$found" != true ]; then
+          echo -e "\nSecret $SECRET was not accessible in Key Vault $KEYVAULT_NAME after retries."
           exit 1
         fi
       done
@@ -404,6 +419,82 @@ resource checkSecrets 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (d
   }
   dependsOn: [
     keyVault
+    keyvrole
+  ]
+}
+
+@description('Check if Arize Key Vault secret is readable with Arize identity')
+resource checkArizeSecret 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (deployContainerApps) {
+  name: 'checkArizeSecret'
+  location: location
+  identity: {
+      type: 'UserAssigned'
+      userAssignedIdentities: {
+        '${arizewebIdentity.id}': {}
+      }
+    }
+  kind: 'AzureCLI'
+  properties: {
+    azCliVersion: '2.70.0'
+    scriptContent: '''
+      #!/bin/bash
+      set -e
+
+      KEYVAULT_NAME="${KEYVAULT_NAME}"
+      SECRET="phoenix-sql-database-url"
+
+      echo "Checking if secret $SECRET exists in Key Vault $KEYVAULT_NAME..."
+      for i in {1..20}; do
+        if az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET" > /dev/null 2>&1; then
+          echo "Secret $SECRET is accessible in Key Vault $KEYVAULT_NAME."
+          exit 0
+        fi
+
+        echo "Attempt $i/20: secret $SECRET not accessible yet, retrying in 15s..."
+        sleep 15
+      done
+
+      echo "Secret $SECRET was not accessible in Key Vault $KEYVAULT_NAME after retries."
+      exit 1
+    '''
+    arguments: '--KEYVAULT_NAME ${take(replace(prefix, '-', ''), 15)}keyvault'
+    forceUpdateTag: uniqueString(resourceGroup().id, 'arize')
+    retentionInterval: 'PT1H'
+    timeout: 'PT10M'
+    environmentVariables: [
+      {
+        name: 'KEYVAULT_NAME'
+        value: '${take(replace(prefix, '-', ''), 15)}keyvault'
+      }
+    ]
+  }
+  dependsOn: [
+    keyVault
+    arizekeyvrole
+  ]
+}
+
+@description('Add a short delay to allow Key Vault RBAC propagation for Container Apps secret resolution')
+resource waitForSecretPropagation 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (deployContainerApps) {
+  name: 'waitForSecretPropagation'
+  location: location
+  kind: 'AzureCLI'
+  properties: {
+    azCliVersion: '2.70.0'
+    scriptContent: '''
+      #!/bin/bash
+      set -e
+      echo "Waiting 120 seconds for Key Vault RBAC propagation to stabilize for Container Apps..."
+      sleep 120
+      echo "Propagation wait complete."
+    '''
+    forceUpdateTag: uniqueString(resourceGroup().id, 'kv-propagation')
+    retentionInterval: 'PT1H'
+    timeout: 'PT10M'
+  }
+  dependsOn: [
+    checkSecrets
+    checkArizeSecret
   ]
 }
 
@@ -419,34 +510,34 @@ var arizeSecrets = {
 
 @description('Secrets for the Backend app')
 var backendSecrets = {
-  keyVaultReferences: [
+  inline: [
     {
       name: 'postgres-host'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-host'
+      value: postgresServer.outputs.POSTGRES_DOMAIN_NAME
     }
     {
       name: 'postgres-username'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-username'
+      value: administratorLoginUser
     }
     {
       name: 'postgres-database'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-database'
+      value: backendappDatabaseName
     }
     {
       name: 'postgres-password'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-password'
+      value: administratorLoginPassword
     }
     {
       name: 'postgres-port'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/postgres-port'
+      value: postgresServerPort
     }
     {
       name: 'azure-openai-endpoint'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/azure-openai-endpoint'
+      value: openAI.outputs.modelInfos[0].endpoint
     }
     {
       name: 'azure-openai-key'
-      keyVaultUrl: '${keyVault.outputs.keyVaultUri}secrets/azure-openai-key'
+      value: openAI.outputs.modelInfos[0].key
     }
   ]
 }

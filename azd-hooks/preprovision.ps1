@@ -3,41 +3,52 @@ param()
 # Fail on any error
 $ErrorActionPreference = 'Stop'
 
-# Function to prompt and read input for Azure Container Apps deployment
+# Respect pre-set value to support non-interactive/automated provisioning runs.
+$existingDeployApps = azd env get-value DEPLOY_AZURE_CONTAINERAPPS 2>$null
 
-$input = $null
-$validInput = $false
+if ($existingDeployApps) {
+    $normalized = $existingDeployApps.Trim().ToLower()
+    if ($normalized -in @('true', 'false')) {
+        $deployApps = [System.Convert]::ToBoolean($normalized)
+        Write-Host "Using pre-set DEPLOY_AZURE_CONTAINERAPPS=$normalized" -ForegroundColor Cyan
+    }
+}
 
-while (-not $validInput) {
-    # Prompt the user
-    $input = Read-Host "Do you want to deploy Azure Container Apps? (y/n)"
+if ($null -eq $deployApps) {
+    $input = $null
+    $validInput = $false
 
-    # Convert input to lowercase
-    $input = $input.ToLower()
+    while (-not $validInput) {
+        # Prompt the user
+        $input = Read-Host "Do you want to deploy Azure Container Apps? (y/n)"
 
-    switch ($input) {
-        'y' {
-            $deployApps = $true
-            $validInput = $true
-            azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
-        }
-        'yes' {
-            $deployApps = $true
-            $validInput = $true
-            azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
-        }
-        'n' {
-            $deployApps = $false
-            $validInput = $true
-            azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
-        }
-        'no' {
-            $deployApps = $false
-            $validInput = $true
-            azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
-        }
-        default {
-            Write-Host "Invalid input. Please enter 'y', 'yes', 'n', or 'no'."
+        # Convert input to lowercase
+        $input = $input.ToLower()
+
+        switch ($input) {
+            'y' {
+                $deployApps = $true
+                $validInput = $true
+                azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
+            }
+            'yes' {
+                $deployApps = $true
+                $validInput = $true
+                azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
+            }
+            'n' {
+                $deployApps = $false
+                $validInput = $true
+                azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
+            }
+            'no' {
+                $deployApps = $false
+                $validInput = $true
+                azd env set "DEPLOY_AZURE_CONTAINERAPPS" $deployApps
+            }
+            default {
+                Write-Host "Invalid input. Please enter 'y', 'yes', 'n', or 'no'."
+            }
         }
     }
 }
